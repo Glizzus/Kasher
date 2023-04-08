@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -9,69 +11,50 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"strconv"
 	"time"
 )
 
 func generateUuid() string {
 	id := make([]byte, 16)
 	rand.Read(id)
-	return string(id)
+	return hex.EncodeToString(id)
 }
 
 type kasherArgs struct {
-	localPort       int
-	serverHost      *url.URL
-	destinationHost string
-	destinationPort int
+	localAddr   string
+	serverHost  string
+	destination string
 }
 
 func parseArgs() *kasherArgs {
 	args := os.Args[1:]
-	localPort, err := strconv.Atoi(args[0])
-	if err != nil {
-		log.Fatalf("Supplied local port %d is not a number\n", localPort)
+	kasherArgs := kasherArgs{
+		localAddr:   args[0],
+		serverHost:  args[1],
+		destination: args[2],
 	}
-	serverHost, err := url.Parse(args[1])
-	if err != nil {
-		log.Fatal("Invalid server host: ", err.Error())
-	}
-	destinationHost := args[2]
-	destinationPort, err := strconv.Atoi(args[3])
-	if err != nil {
-		log.Fatalf("Supplied destination port %d is not a number\n", destinationPort)
-	}
-	kargs := kasherArgs{
-		localPort:       localPort,
-		serverHost:      serverHost,
-		destinationHost: destinationHost,
-		destinationPort: destinationPort,
-	}
-	return &kargs
-}
-
-func randomMethod() string {
-	methods := []string{http.MethodPost, http.MethodPut, http.MethodDelete}
-	return methods[rand.Intn(3)]
+	return &kasherArgs
 }
 
 var client = &http.Client{
 	Timeout: 63 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
 }
+
+var buff = make([]byte, 1024*640)
 
 func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 	connId := generateUuid()
 
-	fmt.Printf("Opening connection for %s%d (%s)", args.destinationHost, args.destinationPort, connId)
-	hostUrl := args.serverHost.String() + "/" + connId
-	data := fmt.Sprintf("%s:%d", args.destinationHost, args.destinationPort)
-	req, err := http.NewRequest(http.MethodPost, hostUrl, bytes.NewBufferString(data))
+	log.Printf("Opening connection for %s (%s)\n", args.destination, connId)
+	hostUrl := args.serverHost + "/" + connId
+	req, err := http.NewRequest(http.MethodPost, hostUrl, bytes.NewBufferString(args.destination))
 	if err != nil {
 		fmt.Println("Error creating http request: ", err.Error())
 	}
-
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Error with http response: ", err.Error())
@@ -92,16 +75,19 @@ func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 			}
 			// TODO: Implement switching on error codes to provide more informative error messages
 			if res.StatusCode != http.StatusOK {
+				if res.StatusCode == http.StatusNoContent {
+					log.Println("Nothing")
+					continue
+				}
 				fmt.Println("Bad http response while polling ", res.StatusCode)
 				connected = false
 			}
-
+			io.Copy(conn, res.Body)
 		}
 	}()
-	var maxBufferSize int64 = 1024 * 640
 	for connected {
-		limitedReader := io.LimitReader(conn, maxBufferSize)
-		data, err := io.ReadAll(limitedReader)
+		conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+		n, err := conn.Read(buff)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				fmt.Println("Local connection closed")
@@ -117,7 +103,10 @@ func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 				connected = false
 			}
 		}
-		send, err := http.NewRequest(http.MethodPut, hostUrl, bytes.NewBuffer(data))
+		if n == 0 {
+			continue
+		}
+		send, err := http.NewRequest(http.MethodPut, hostUrl, bytes.NewBuffer(buff[:n]))
 		if err != nil {
 			fmt.Println(err.Error())
 		}
@@ -126,14 +115,13 @@ func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 			fmt.Println(err.Error())
 		}
 	}
-
 }
 
 func main() {
 
 	args := parseArgs()
-	log.Printf("Opening local port %d", args.localPort)
-	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", args.localPort))
+	log.Printf("Opening local address %s", args.localAddr)
+	addr, err := net.ResolveTCPAddr("tcp", args.localAddr)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
