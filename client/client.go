@@ -22,7 +22,7 @@ func generateUuid() string {
 }
 
 type kasherArgs struct {
-	localAddr   string
+	localPort   string
 	serverHost  string
 	destination string
 }
@@ -30,7 +30,7 @@ type kasherArgs struct {
 func parseArgs() *kasherArgs {
 	args := os.Args[1:]
 	kasherArgs := kasherArgs{
-		localAddr:   args[0],
+		localPort:   args[0],
 		serverHost:  args[1],
 		destination: args[2],
 	}
@@ -120,8 +120,8 @@ func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 func main() {
 
 	args := parseArgs()
-	log.Printf("Opening local address %s", args.localAddr)
-	addr, err := net.ResolveTCPAddr("tcp", args.localAddr)
+	log.Printf("Opening local port %s", args.localPort)
+	addr, err := net.ResolveTCPAddr("tcp", ":"+args.localPort)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

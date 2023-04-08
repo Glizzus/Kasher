@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -82,9 +83,10 @@ func parseArgs() (string, string) {
 
 func main() {
 
+	localPort := os.Args[1]
 	cert, key := parseArgs()
 	http.HandleFunc("/", connectionHandler)
-	err := http.ListenAndServeTLS(":10000", cert, key, nil)
+	err := http.ListenAndServeTLS(":"+localPort, cert, key, nil)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
