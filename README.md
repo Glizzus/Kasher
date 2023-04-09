@@ -7,7 +7,7 @@ Tunnel TCP through HTTP - no CONNECT
 
 Server:
 
-`kasher-server.exe [port] --cert [path-to-cert] --key [path-to-key]`
+`kasher-server.exe --cert [path-to-cert] --key [path-to-key] [port]`
 
 Client:
 
