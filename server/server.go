@@ -11,14 +11,32 @@ import (
 	"unicode"
 )
 
+// We use a map to keep track of each connection.
+// The map is indexed by a unique connection ID, which leads
+// To the corresponding TCP connection
+var connectionMap = make(map[string]*net.TCPConn)
+
+// Deletes a connection by removing the connection entry
+// from our connection map.
 func doDelete(connId string, w *http.ResponseWriter) {
 	delete(connectionMap, connId)
 	log.Printf("Connection deleted for connection %s", connId)
 	(*w).WriteHeader(http.StatusOK)
 }
 
-var connectionMap = make(map[string]*net.TCPConn)
-
+// Our primary connection handler. It takes responses in this format:
+//
+//	/[connId]
+//
+// And performs operations depending upon the method used.
+//
+// DELETE: Removes connection with given id
+//
+// POST: Creates connection with given id
+//
+// PUT: Takes data from request and ferries it to the destination
+//
+// GET: Sends data from the destination to the requester
 func connectionHandler(w http.ResponseWriter, r *http.Request) {
 	var maxBufferSize int64 = 1024 * 640
 	connId := r.URL.Path[1:]
