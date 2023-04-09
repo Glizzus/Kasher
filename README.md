@@ -17,7 +17,7 @@ Example
 
 on *myserver*
 
-`kasher-server.exe 10000 --cert ./cert.pem --key ./key.pem`
+`kasher-server.exe --cert ./cert.pem --key ./key.pem 10000`
 
 
 `kasher-client.exe 20000 https://myserver:10000 sshserver:22`
