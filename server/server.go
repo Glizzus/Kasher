@@ -8,7 +8,14 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"unicode"
 )
+
+func doDelete(connId string, w *http.ResponseWriter) {
+	delete(connectionMap, connId)
+	log.Printf("Connection deleted for connection %s", connId)
+	(*w).WriteHeader(http.StatusOK)
+}
 
 var connectionMap = make(map[string]*net.TCPConn)
 
@@ -17,9 +24,10 @@ func connectionHandler(w http.ResponseWriter, r *http.Request) {
 	connId := r.URL.Path[1:]
 	// TODO: Make these different functions
 	switch r.Method {
+
 	case http.MethodDelete:
-		delete(connectionMap, connId)
-		log.Printf("Connection deleted for connection %s", connId)
+		doDelete(connId, &w)
+
 	case http.MethodPost:
 		log.Printf("New connection %s from %s", connId, r.RemoteAddr)
 		destBytes, err := io.ReadAll(r.Body)
@@ -62,18 +70,21 @@ func connectionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func parseArgs() (string, string) {
-	var cert string
-	flag.StringVar(&cert, "cert", "", "The filepath of the certificate file")
-	var key string
-	flag.StringVar(&key, "key", "", "The filepath of the key file")
+func parseArgs() (*string, *string) {
+	certFlagDescription := "The filepath of the certificate file"
+	cert := flag.String("cert", "", certFlagDescription)
+	flag.StringVar(cert, "c", "", certFlagDescription)
+
+	keyFlagDescription := "The Filepath of the key file"
+	key := flag.String("key", "", keyFlagDescription)
+	flag.StringVar(key, "k", "", keyFlagDescription)
 	flag.Parse()
 
-	if cert == "" || key == "" {
-		if cert == key {
+	if *cert == "" || *key == "" {
+		if *cert == *key {
 			log.Fatal("You must define the path to your SSL certificate and key using the --cert and --key flags")
 		}
-		if cert == "" {
+		if *cert == "" {
 			log.Fatal("You must define the path to your SSL certificate using the --cert flag")
 		}
 		log.Fatal("You must define the path to your SSL key using the --key flag")
@@ -83,10 +94,23 @@ func parseArgs() (string, string) {
 
 func main() {
 
-	localPort := os.Args[1]
+	if len(os.Args) < 5 {
+		log.Println("Expected more arguments")
+		log.Fatal("Format should be --cert [certfile] --key [keyfile] [port]")
+	}
+	localPort := os.Args[5]
+	if localPort == "" {
+		log.Fatal("Local port is undefined")
+	}
+	for _, c := range localPort {
+		if !unicode.IsDigit(c) {
+			log.Fatal("Local port must be a positive number")
+		}
+	}
 	cert, key := parseArgs()
 	http.HandleFunc("/", connectionHandler)
-	err := http.ListenAndServeTLS(":"+localPort, cert, key, nil)
+	log.Printf("Attempting to listen on port %s", localPort)
+	err := http.ListenAndServeTLS(":"+localPort, *cert, *key, nil)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
