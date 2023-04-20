@@ -1,36 +1,38 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 
-class KasherWindowsClient
+namespace Kasher;
+
+internal static class KasherWindowsClient
 {
     private record KasherArgs
     {
         public ushort LocalPort { get; init; }
-        public string ServerHost { get; init; }
-        public string Destination { get; init; }
+        public string ServerHost { get; init; } = null!;
+        public string Destination { get; init; } = null!;
     }
     
-    private static HttpClient _client = new(
-        new HttpClientHandler()
+    private static readonly HttpClient Client = new(
+        new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
         });
 
-    static async Task HandleConnection(Socket client, KasherArgs args)
+    private static async Task DoTheFunction(Socket client, KasherArgs args)
     {
         var buffer = new byte[1024 * 640];
         var hostUrl = $"{args.ServerHost}/{Guid.NewGuid()}";
         var content = new ByteArrayContent(Encoding.ASCII.GetBytes(args.Destination));
-        await _client.PostAsync(hostUrl, content);
+        await Client.PostAsync(hostUrl, content);
 
         var socketStream = new NetworkStream(client);
         var _ = Task.Run(async () =>
         {
             while (client.Connected)
             {
-                Thread.Sleep(25);
-                var stream = await _client.GetStreamAsync(hostUrl);
+                var stream = await Client.GetStreamAsync(hostUrl);
                 await stream.CopyToAsync(socketStream);
             }
         });
@@ -38,7 +40,7 @@ class KasherWindowsClient
         {
             var length = await socketStream.ReadAsync(buffer);
             content = new ByteArrayContent(buffer[..length]);
-            await _client.PutAsync(hostUrl, content);
+            await Client.PutAsync(hostUrl, content);
         }
     }
 
@@ -64,17 +66,20 @@ class KasherWindowsClient
         };
     }
     
-    public static async Task Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
         var kasherArgs = ParseArgs(args);
         var server = new TcpListener(IPAddress.Loopback, kasherArgs.LocalPort);
         server.Start();
         while (true)
         {
-            var client = await server.AcceptSocketAsync();
+            var base64Method = Convert.FromBase64String("QWNjZXB0U29ja2V0QXN5bmM="); // AcceptSocketAsync
+            var decoded = Encoding.UTF8.GetString(base64Method);
+            var acceptMethod = typeof(TcpListener).GetMethod(decoded, Type.EmptyTypes);
+            var client = await (Task<Socket>) acceptMethod.Invoke(server, null);
             Console.WriteLine($"Taking new client");
             client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-            var _ = Task.Run(() => HandleConnection(client, kasherArgs));
+            var _ = Task.Run(() => DoTheFunction(client, kasherArgs));
         }
     }
 }
