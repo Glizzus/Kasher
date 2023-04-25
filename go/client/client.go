@@ -44,7 +44,23 @@ var client = &http.Client{
 	},
 }
 
-var buff = make([]byte, 1024*640)
+func readNonBlocking(conn *net.TCPConn, buffer []byte, lengthChannel chan int, errorChannel chan error) (int, error) {
+	go func() {
+		length, err := conn.Read(buffer)
+		if err != nil {
+			errorChannel <- err
+		} else {
+			lengthChannel <- length
+		}
+	}()
+
+	select {
+	case length := <-lengthChannel:
+		return length, nil
+	case err := <-errorChannel:
+		return 0, err
+	}
+}
 
 func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 	connId := generateUuid()
@@ -79,19 +95,27 @@ func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 			}
 			// TODO: Implement switching on error codes to provide more informative error messages
 			if res.StatusCode != http.StatusOK {
-				if res.StatusCode == http.StatusNoContent {
-					log.Println("Nothing")
+				switch res.StatusCode {
+				case http.StatusNoContent:
+					log.Println("Received nothing but OK, continuing...")
 					continue
+				case http.StatusGone:
+					log.Println("Socket connection closed, returning...")
+					connected = false
+				default:
+					log.Println("Bad http response while polling ", res.StatusCode)
+					connected = false
 				}
-				fmt.Println("Bad http response while polling ", res.StatusCode)
-				connected = false
+			} else {
+				io.Copy(conn, res.Body)
 			}
-			io.Copy(conn, res.Body)
 		}
 	}()
+	lengthChannel := make(chan int)
+	errorChannel := make(chan error)
+	buffer := make([]byte, 1024 * 640)
 	for connected {
-		conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		n, err := conn.Read(buff)
+		length, err := readNonBlocking(conn, buffer, lengthChannel, errorChannel)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				fmt.Println("Local connection closed")
@@ -107,10 +131,10 @@ func handleConnection(conn *net.TCPConn, args *kasherArgs) {
 				connected = false
 			}
 		}
-		if n == 0 {
+		if length == 0 {
 			continue
 		}
-		send, err := http.NewRequest(http.MethodPut, hostUrl, bytes.NewBuffer(buff[:n]))
+		send, err := http.NewRequest(http.MethodPut, hostUrl, bytes.NewBuffer(buffer[:length]))
 		if err != nil {
 			fmt.Println(err.Error())
 		}
@@ -125,7 +149,7 @@ func main() {
 
 	args := parseArgs()
 	log.Printf("Opening local port %s", args.localPort)
-	addr, err := net.ResolveTCPAddr("tcp", ":"+args.localPort)
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:"+args.localPort)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
