@@ -1,11 +1,17 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -142,35 +148,9 @@ func connectionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func parseArgs() (*string, *string) {
-	certFlagDescription := "The filepath of the certificate file"
-	cert := flag.String("cert", "", certFlagDescription)
-	flag.StringVar(cert, "c", "", certFlagDescription)
-
-	keyFlagDescription := "The Filepath of the key file"
-	key := flag.String("key", "", keyFlagDescription)
-	flag.StringVar(key, "k", "", keyFlagDescription)
-	flag.Parse()
-
-	if *cert == "" || *key == "" {
-		if *cert == *key {
-			log.Fatal("You must define the path to your SSL certificate and key using the --cert and --key flags")
-		}
-		if *cert == "" {
-			log.Fatal("You must define the path to your SSL certificate using the --cert flag")
-		}
-		log.Fatal("You must define the path to your SSL key using the --key flag")
-	}
-	return cert, key
-}
-
 func main() {
 
-	if len(os.Args) < 5 {
-		log.Println("Expected more arguments")
-		log.Fatal("Format should be --cert [certfile] --key [keyfile] [port]")
-	}
-	localPort := os.Args[5]
+	localPort := os.Args[1]
 	if localPort == "" {
 		log.Fatal("Local port is undefined")
 	}
@@ -179,11 +159,51 @@ func main() {
 			log.Fatal("Local port must be a positive number")
 		}
 	}
-	cert, key := parseArgs()
-	http.HandleFunc("/", connectionHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", connectionHandler)
+
+	server := &http.Server{
+		Addr: ":"+localPort,
+		TLSConfig: selfSignedConfig(),
+		Handler: mux,
+	}
 	log.Printf("Attempting to listen on port %s", localPort)
-	err := http.ListenAndServeTLS(":"+localPort, *cert, *key, nil)
+	err := server.ListenAndServeTLS("", "")
 	if err != nil {
 		log.Fatal(err.Error())
+	}
+}
+
+func selfSignedConfig() *tls.Config {
+
+	privKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		panic(err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "localhost"},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(0, 0, 30),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privKey.PublicKey, privKey)
+	if err != nil {
+		panic(err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privKey)})
+
+	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		panic(err)
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{tlsCert},
 	}
 }
