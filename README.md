@@ -1,25 +1,138 @@
 # Kasher
 
-Tunnel TCP through HTTP - no CONNECT
+Tunnel TCP through HTTPS - no CONNECT
 
+A project to generate an HTTP tunneling without the CONNECT
+method. Created with portability, speed, and ease of use in mind,
+the binaries are relatively small (~5000 kb) and require no intepreter.
 
-## How to use
+The server may require admin privileges to set up, but the client is designed
+to be run anywhere.
 
-Server:
+Previously, the client set off Windows Defender. Although this has been solved
+for now, don't be suprised if it happens again.
 
-`kasher-server.exe --cert [path-to-cert] --key [path-to-key] [port]`
+The server generates its own TLS certificates at runtime so that none need
+to be provided.
 
-Client:
+# Installation
 
-`kasher-client.exe [port] [kasher-server-address]:[kasher-server-port] [destination-address]:[destination-port]`
+1. Grab the source and build yourself
 
-Example
+```
+go build client
+go build server
+```
 
-on *myserver*
+If you have python installed, you can use the provided [script](/tools/compile.py)
+to compile a bunch of binaries and take what you need.
 
-`kasher-server.exe --cert ./cert.pem --key ./key.pem 10000`
+2. Take a precompiled binary
 
+Precompiled binaries are on the [releases](/releases) page. Download what you need.
 
-`kasher-client.exe 20000 https://myserver:10000 sshserver:22`
+# API
 
+## Create new Connection
 
+**URL**: `/{connection-id}`
+
+**Method**: `POST`
+
+**Data constraints**
+
+Provide the destination in raw bytes
+```
+[destination-host]:[destination-port]
+```
+
+**Data example** Tunneling SSH
+```
+sshserver:22
+```
+
+### Success Response
+
+**Condition**: The server successfully created the connection
+
+**Code**: `201 CREATED`
+
+<br />
+
+## Upload Data
+
+**URL**: `/{connection-id}`
+
+**Method**: `PUT`
+
+**DATA constraints**
+
+Provide the bytes to upload
+```
+[bytes]
+```
+
+### Success Response
+
+**Condition**: The server is successfully reading the data
+
+**Code**: `200 OK`
+
+### Error Response
+
+**Condition**: The requested connection id doesn't exist
+
+**Code**: `404 NOT FOUND`
+
+<br />
+
+## Retrieve Data
+
+**URL**: `/{connection-id}`
+
+**Method**: `GET`
+
+### Success Response
+
+**Condition**: The server has data to return for the connection id
+
+**CODE**: `200 OK`
+
+**Content**: The data in bytes
+```
+[bytes]
+```
+
+OR
+
+**Condition**: The server has no data, but everything is fine
+
+**CODE**: `204 NO CONTENT`
+
+**CONTENT**: Empty Response
+
+### Error Response
+
+**Condition**: The requested connection id doesn't exist
+
+**Code**: `404 NOT FOUND`
+
+OR
+
+**Condition**: The connection id exists but the connection has been closed by EOF
+
+**CODE**: `410 GONE`
+
+<br />
+
+## Remove Connection
+
+**URL**: `/{connection-id}`
+
+**Method**: `DELETE`
+
+### Success Response
+
+**Condition**: The requested id has either been deleted or never existed
+
+**Code**: `200 OK`
