@@ -25,7 +25,7 @@ go build server
 ```
 
 If you have python installed, you can use the provided [script](/tools/compile.py)
-to compile a bunch of binaries and take what you need.
+from the project root to compile a bunch of binaries and take what you need.
 
 2. Take a precompiled binary
 
