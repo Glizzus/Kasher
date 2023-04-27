@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  kasher:
+    build:
+      context: .
+      args:
+        port: 8080
+      networks:
+        - revproxy
+
+networks:
+  revproxy:
+    external: true
