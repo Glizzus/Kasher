@@ -31,6 +31,19 @@ to compile a bunch of binaries and take what you need.
 
 Precompiled binaries are on the [releases](/releases) page. Download what you need.
 
+# Usage
+
+Client - `kasherclient.exe [local-port] [kasher-server-url] [destination]`
+
+Server - `kasherserver.exe [local-port]`
+
+
+Example:
+
+Client - `kasherclient.exe 50000 https://kasherserver:30000 remotesshserver:22`
+
+Server - `kasherserver.exe 30000`
+
 # API
 
 ## Create new Connection
