@@ -6,9 +6,8 @@ RUN go build -o main .
 FROM alpine
 COPY --from=builder /app/main /app/main
 
-ARG port=8080
+ENV port=8080
 
-EXPOSE $port
+EXPOSE ${port}
 
-CMD ["/app/main", $port]
-
+CMD /app/main ${port}

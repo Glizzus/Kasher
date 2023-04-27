@@ -6,8 +6,10 @@ services:
       context: .
       args:
         port: 8080
-      networks:
-        - revproxy
+    networks:
+      - revproxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   revproxy:
