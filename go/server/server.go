@@ -1,17 +1,10 @@
 package main
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -20,10 +13,10 @@ import (
 )
 
 type kasherClient struct {
-	conn *net.TCPConn
-	buffer []byte
+	conn          *net.TCPConn
+	buffer        []byte
 	lengthChannel chan int
-	errorChannel chan error
+	errorChannel  chan error
 }
 
 // We use a map to keep track of each connection.
@@ -32,7 +25,10 @@ type kasherClient struct {
 var connectionMap = make(map[string]*kasherClient)
 
 func (client *kasherClient) readNonBlocking() (int, error) {
-	client.conn.SetReadDeadline(time.Now().Add(time.Second * 30))
+	err := client.conn.SetReadDeadline(time.Now().Add(time.Second * 30))
+	if err != nil {
+		log.Println("Error setting read deadline: ", err.Error())
+	}
 	go func() {
 		length, err := client.conn.Read(client.buffer)
 		if err != nil {
@@ -77,8 +73,6 @@ func doDelete(connId string, w *http.ResponseWriter) {
 // GET: Sends data from the destination to the requester
 func connectionHandler(w http.ResponseWriter, r *http.Request) {
 	connId := r.URL.Path[1:]
-	log.Printf("Received %s from %s", r.Method, connId)
-	// TODO: Make these different functions
 	switch r.Method {
 
 	case http.MethodDelete:
@@ -104,12 +98,12 @@ func connectionHandler(w http.ResponseWriter, r *http.Request) {
 		_ = conn.SetKeepAlive(true)
 
 		client := kasherClient{
-			conn: conn,
-			buffer: make([]byte, 1024 * 640),
+			conn:          conn,
+			buffer:        make([]byte, 1024),
 			lengthChannel: make(chan int),
-			errorChannel: make(chan error),
+			errorChannel:  make(chan error),
 		}
-		connectionMap[connId] = &client 
+		connectionMap[connId] = &client
 		w.WriteHeader(http.StatusCreated)
 	case http.MethodPut:
 		client, exists := connectionMap[connId]
@@ -133,7 +127,7 @@ func connectionHandler(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Connection closed from remote host, removing connection")
 				w.WriteHeader(http.StatusGone)
 				return
-			} 
+			}
 			fmt.Println("Error on read from local socket: ", err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -163,47 +157,13 @@ func main() {
 	mux.HandleFunc("/", connectionHandler)
 
 	server := &http.Server{
-		Addr: ":"+localPort,
-		TLSConfig: selfSignedConfig(),
-		Handler: mux,
+		Addr:      "0.0.0.0:" + localPort,
+		TLSConfig: SelfSignedCertificate(),
+		Handler:   mux,
 	}
 	log.Printf("Attempting to listen on port %s", localPort)
 	err := server.ListenAndServeTLS("", "")
 	if err != nil {
 		log.Fatal(err.Error())
-	}
-}
-
-func selfSignedConfig() *tls.Config {
-
-	privKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		panic(err)
-	}
-
-	template := x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "localhost"},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(0, 0, 30),
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privKey.PublicKey, privKey)
-	if err != nil {
-		panic(err)
-	}
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privKey)})
-
-	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		panic(err)
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
 	}
 }

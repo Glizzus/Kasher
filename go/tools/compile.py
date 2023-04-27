@@ -5,7 +5,7 @@ from os import environ
 def compile_go(prog, arch, os):
     print(f'Compiling {prog} for architecture {arch} for OS {os}')
     binary = f"bin/kasher{prog}-{arch}-{os}.exe"
-    source = f"{prog}/{prog}.go"
+    source = '.'
     run(["go", "build", "-ldflags", "-s -w", "-o", binary, source])
 
 
